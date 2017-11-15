@@ -103,28 +103,6 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
         long_count = 0;
         lat_count = lat_count + 1;
       }
-      //Setting initial stations properties. These will be quickly overwritten by onClockTick
-      //stationEntities[i].color = new Cesium.Color(1, 1, 1, 0.6);
-      //stationEntities[i].show = false;
-      //stationEntities[i].properties.station = stationEntities[i].properties.name;
-      //delete stationEntities[i].properties.name;
-      //setStationAppearance(stationEntities[i]);
-      if (lat_count%2 == 0){
-        var color_geom1 = new Cesium.ColorGeometryInstanceAttribute(1, 0.0, 0, 0.3);
-        var color_geom2 = new Cesium.ColorGeometryInstanceAttribute(0, 0.0, 1, 0.3);
-      }
-      else{
-        var color_geom1 = new Cesium.ColorGeometryInstanceAttribute(0, 0.0, 1, 0.3);
-        var color_geom2 = new Cesium.ColorGeometryInstanceAttribute(1, 0.0, 0, 0.3);
-      }
-      var color_geom = color_geom1;
-      if (long_count%2 != 0){
-        color_geom = color_geom2;
-      }
-      if (long_count%2 == 0){
-        color_geom = color_geom1;
-      }
-      
       long_count = long_count + 1;
       var land = rectangles[i].land;
       if (!land){
@@ -135,27 +113,25 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
       var s = coor.south;
       var e = coor.east;
       var n = coor.north;
-      var instance = new Cesium.GeometryInstance({
-        geometry : new Cesium.RectangleGeometry({
-          rectangle : Cesium.Rectangle.fromDegrees(w, s, e, n),
-          vertexFormat : Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
-        }),
-        attributes : {
-          color : color_geom
-        }
-      });
 
-      scene.primitives.add(new Cesium.Primitive({
-        geometryInstances : [instance],
-        appearance : new Cesium.PerInstanceColorAppearance()
-      }));
+      var rectangle = Cesium.Rectangle.fromDegrees(w, s, e, n);
+      viewer.entities.add({
+        rectangle : {
+            coordinates : rectangle,
+            fill : false,
+            outline : true,
+            //outlineColor : Cesium.Color.BLACK.withAlpha(0.2),//Cesium.Color.GREY,
+            outlineColor : Cesium.Color.WHITE,
+            outlineWidth: 1
+        }
+    });
     }
   }
 
 
-  function populateGlobe(stationTemperatures, stationLocations) {
-    var stationEntities = stationLocations.entities.values;
-    var stationEntitiesLength = stationEntities.length;
+  function populateGlobe(sampleTypes, sampleLocations) {
+    var locationEntities = sampleLocations.entities.values;
+    var locationEntitiesLength = locationEntities.length;
     var timelineTime = new Cesium.GregorianDate(0, 0, 0, 0, 0, 0, 0, false);
     var lastTime = new Cesium.GregorianDate(0, 0, 0, 0, 0, 0, 0, false);
     var stationCartographic = new Cesium.Cartographic();
@@ -164,21 +140,21 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
     var $infoBox = $('.cesium-viewer-infoBoxContainer');
     var infoboxHidden = false;
   
-    for (var i = 0; i < stationEntitiesLength; i++) {
-      stationEntities[i].color = new Cesium.Color(1, 1, 1, 0.6);
-      stationEntities[i].show = false;
-      stationEntities[i].properties.station = stationEntities[i].properties.name;
-      delete stationEntities[i].properties.name;
-      setStationAppearance(stationEntities[i]);
+    for (var i = 0; i < locationEntitiesLength; i++) {
+      locationEntities[i].color = new Cesium.Color(1, 1, 1, 0.6);
+      locationEntities[i].show = false;
+      locationEntities[i].properties.station = locationEntities[i].properties.name;
+      delete locationEntities[i].properties.name;
+      setStationAppearance(locationEntities[i]);
     }
   
-    viewer.dataSources.add(stationLocations);
+    viewer.dataSources.add(sampleLocations);
   
     viewer.clock.onTick.addEventListener(function onClockTick(clock) {
       timelineTime = Cesium.JulianDate.toGregorianDate(clock.currentTime, timelineTime);
   
       if (cameraMoving) {
-        throttledUpdateStations(stationLocations, spatialSelector);
+        throttledUpdateStations(sampleLocations, spatialSelector);
       }
   
       if (_.get(viewer, 'selectedEntity.selectable') === false) {
@@ -198,19 +174,19 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
         //Stop the callbacks since we can be adding and removing a lot of items
   
         for (var i = 0; i < inFrustumStations.values.length; i++) {
-          var stationEntity = inFrustumStations.values[i];
-          var stationId = stationEntity.properties.stationId;
-          var temperature = stationTemperatures[stationId][timelineTime.year]
-            && stationTemperatures[stationId][timelineTime.year][timelineTime.month];
-          var wasShowing = stationEntity.show;
+          var locationEntity = inFrustumStations.values[i];
+          var stationId = locationEntity.properties.stationId;
+          var temperature = sampleTypes[stationId][timelineTime.year]
+            && sampleTypes[stationId][timelineTime.year][timelineTime.month];
+          var wasShowing = locationEntity.show;
   
           if (temperature < 999) {
-            stationEntity.color = stationColorScale(temperature, stationEntity.color);
-            stationEntity.properties.temperature = temperature;
-            stationEntity.show = true;
+            locationEntity.color = stationColorScale(temperature, stationEntity.color);
+            locationEntity.properties.temperature = temperature;
+            locationEntity.show = true;
   
             //Add to the selection group if under selector
-            if (selector.show && !wasShowing && stationSelected(stationEntity, rectangleCoordinates, stationCartographic)) {
+            if (selector.show && !wasShowing && stationSelected(locationEntity, rectangleCoordinates, stationCartographic)) {
               //Covers case where we zoom out of selection area
               if (!selectedStations.contains(stationEntity)) {
                 selectedStations.add(stationEntity);
@@ -232,7 +208,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
         var selectedId = _.get(viewer, 'selectedEntity.properties.stationId');
   
         if (selectedId) {
-          var selectedTemperature = _.get(stationTemperatures, [selectedId, timelineTime.year, timelineTime.month]);
+          var selectedTemperature = _.get(sampleTypes, [selectedId, timelineTime.year, timelineTime.month]);
   
           if (selectedTemperature > 999) {
             selectedTemperature = 'N/A';
@@ -244,8 +220,8 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
     });
   }
   
-  function setupEventListeners(stationLocations) {
-    var stationEntities = stationLocations.entities.values;
+  function setupEventListeners(sampleLocations) {
+    var stationEntities = sampleLocations.entities.values;
     var stationEntitiesLength = stationEntities.length;
     var screenSpaceEventHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
   
@@ -330,7 +306,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
           var selectedItems = _.map(spatialHash.retrieve(spatialSelector), 'id');
   
           for (var i = 0; i < selectedItems.length; i++) {
-            var stationEntity = stationLocations.entities.getById(selectedItems[i]);
+            var stationEntity = sampleLocations.entities.getById(selectedItems[i]);
   
             if (stationEntity.show && !selectedStations.contains(stationEntity)
               && stationSelected(stationEntity, rectangleCoordinates, scratchCartographic)) {
@@ -443,10 +419,10 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
       });
   
     //Initial drawing of points
-    updateVisibleStations(stationLocations, spatialSelector);
+    updateVisibleStations(sampleLocations, spatialSelector);
   }
   
-  function updateVisibleStations(stationLocations, spatialSelector) {
+  function updateVisibleStations(sampleLocations, spatialSelector) {
     //Get the frustum height in degrees
     var frustumHeight = 2 * viewer.camera.positionCartographic.height * Math.tan(viewer.camera.frustum.fov * 0.5) / 111111;
     var frustumWidth = frustumHeight * Math.max(viewer.camera.frustum.aspectRatio, 1.5);
@@ -480,7 +456,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
     var inFrustum = _.chain(selectedIds)
       .unionBy(secondarySelectedIds, 'id')
       .map(function (selected) {
-        return inFrustumStations.add(stationLocations.entities.getById(selected.id)).id;
+        return inFrustumStations.add(sampleLocations.entities.getById(selected.id)).id;
       })
       .value();
   
@@ -488,7 +464,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
       .map('id')
       .difference(inFrustum)
       .map(function (id) {
-        stationLocations.entities.getById(id).show = false;
+        sampleLocations.entities.getById(id).show = false;
       })
       .value();
   
@@ -557,14 +533,14 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
       colorGlobe(gridLocations);
     });
   
-    asyncLoadJson(config.temperatures, function (stationTemperatures) {
-      asyncLoadJson(config.locations, function (stationLocationsGeoJson) {
-          Cesium.GeoJsonDataSource.load(stationLocationsGeoJson).then(function loadStations(stationLocations) {
+    asyncLoadJson(config.temperatures, function (sampleTypes) {
+      asyncLoadJson(config.locations, function (sampleLocationsGeoJson) {
+          Cesium.GeoJsonDataSource.load(sampleLocationsGeoJson).then(function loadStations(sampleLocations) {
             //createHistogram();
             //fcreateLegend();
-            populateGlobe(stationTemperatures, stationLocations);
+            populateGlobe(sampleTypes, sampleLocations);
             
-            setupEventListeners(stationLocations);
+            setupEventListeners(sampleLocations);
             dataLoaded = true;
             if (firstMessageLoaded || !config.server) {
               enableVisualization();
