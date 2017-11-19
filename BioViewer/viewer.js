@@ -13,29 +13,30 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
     baseLayerPicker: false,
     fullscreenButton: false,
     clock: new Cesium.Clock({
-      startTime: Cesium.JulianDate.fromIso8601('2010-01-01T00:00:00Z'),
-      currentTime: Cesium.JulianDate.fromIso8601('2010-01-01T00:00:00Z'),
-      stopTime: Cesium.JulianDate.fromIso8601("2040-12-01T00:00:00Z"),
+      startTime: Cesium.JulianDate.fromIso8601('2021-12-01T00:00:00Z'),
+      currentTime: Cesium.JulianDate.fromIso8601('2021-12-01T00:00:00Z'),
+      stopTime: Cesium.JulianDate.fromIso8601("2045-12-01T00:00:00Z"),
       clockRange: Cesium.ClockRange.CLAMPED,
       canAnimate: false,
       shouldAnimate: false,
       timeline: false,
-      multiplier: 31557600 //Fast forward 1 year a second
+      multiplier: 15000000
     }),
-    imageryProvider: new Cesium.ArcGisMapServerImageryProvider({
-      url: '//services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer',
-      enablePickFeatures: false
-    }),
+    imageryProvider: new Cesium.BingMapsImageryProvider({
+      url : 'https://dev.virtualearth.net',
+      key : 'Hq6SkA7uenRDvLti9WrB~83O6IleO87mg8t3-De3ncg~Al9sLRxCHqiGuOLCWUITgNzg2MOn4bn3MrW04Mtj0UOybRzrlorT6-nXQUyEaL_k',
+      baseLayerPicker: false
+  }),
     automaticallyTrackDataSourceClocks: false
   });
 
 
   window.viewer = viewer;
   
-  var selectedStations = new Cesium.EntityCollection();
-  var inFrustumStations = new Cesium.EntityCollection();
-  inFrustumStations.suspendEvents();
-  selectedStations.suspendEvents();
+  var selectedLocations = new Cesium.EntityCollection();
+  var visibleMalaiseLocations = new Cesium.EntityCollection();
+  visibleMalaiseLocations.suspendEvents();
+  selectedLocations.suspendEvents();
   var selector;
   var redraw = false;
   var rectangleCoordinates = new Cesium.Rectangle();
@@ -71,12 +72,35 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
   viewer.animation.viewModel.dateFormatter = dateFormatter;
   viewer.animation.viewModel.timeFormatter = _.noop;
 
-  var samplingPosition = function samplingPosition(location) {
+
+  var setLocationAppearance = function setLocationAppearance(station){
+    if (typeof station._polygon == 'undefined'){
+        setStationAppearance(station);
+    }
+    else{
+        setGridAppearance(station);
+    }
+  }
+  function updateColor(station){
+   var r = station.color.red;
+   var g = station.color.green;
+   var b = station.color.blue;
+   var a = station.color.alpha;
+   console.log(station);
+   station.polygon.material.color = new Cesium.Color(r, g, b, a);
+  }
+  
+  var setStationAppearance = function setStationAppearance(station) {
+    var toscale = 1.2;
     var getColor = new Cesium.CallbackProperty(function getColor(time, result) {
-      result.red = location.color.red;
-      result.green = location.color.green;
-      result.blue = location.color.blue;
-      result.alpha = location.color.alpha;
+      if (typeof(result) == 'undefined'){
+        console.log('call in station appearance');
+      }
+  
+      result.red = station.color.red;
+      result.green = station.color.green;
+      result.blue = station.color.blue;
+      result.alpha = station.color.alpha;
   
       return result;
     }, false);
@@ -84,8 +108,33 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
     _.extend(station.billboard, {
       color: getColor,
       image: circle,
+      scale: toscale,
       verticalOrigin: Cesium.VerticalOrigin.CENTER,
       scaleByDistance: new Cesium.NearFarScalar(1.5e3, 1.5, 3e7, 0.2)
+    });
+  };
+  
+  var setGridAppearance = function setGridAppearance(station) {
+    console.log('in setGridAppearance');
+    var pos = station._polygon._hierarchy._value.positions;
+    var coor = [];
+    for (var i = 0; i < pos.length;i++){
+      coor.push(Cesium.CesiumMath.toDegrees(Cesium.Cartographic.fromCartesian(pos[i]).longitude));
+      coor.push(Cesium.CesiumMath.toDegrees(Cesium.Cartographic.fromCartesian(pos[i]).latitude));
+    }
+    station.polygon.hierarchy = Cesium.Cartesian3.fromDegreesArray(coor);
+  
+    var getColor = new Cesium.CallbackProperty(function getColor(time, result) {
+    if (typeof station.temperature != 'undefined'){
+      result.red = station.color.red;
+      result.green = station.color.green;
+      result.blue = station.color.blue;
+      result.alpha = station.color.alpha;
+      return result;
+    }, false);
+    _.extend(station.polygon.material, {
+      outline : false,
+      color : new Cesium.Color(0,1,0,0.6)
     });
   };
 
@@ -145,7 +194,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
       locationEntities[i].show = false;
       locationEntities[i].properties.station = locationEntities[i].properties.name;
       delete locationEntities[i].properties.name;
-      setStationAppearance(locationEntities[i]);
+      setLocationAppearance(locationEntities[i]);
     }
   
     viewer.dataSources.add(sampleLocations);
@@ -173,8 +222,8 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
         redraw = false;
         //Stop the callbacks since we can be adding and removing a lot of items
   
-        for (var i = 0; i < inFrustumStations.values.length; i++) {
-          var locationEntity = inFrustumStations.values[i];
+        for (var i = 0; i < visibleMalaiseLocations.values.length; i++) {
+          var locationEntity = visibleMalaiseLocations.values[i];
           var stationId = locationEntity.properties.stationId;
           var temperature = sampleTypes[stationId][timelineTime.year]
             && sampleTypes[stationId][timelineTime.year][timelineTime.month];
@@ -188,20 +237,20 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
             //Add to the selection group if under selector
             if (selector.show && !wasShowing && stationSelected(locationEntity, rectangleCoordinates, stationCartographic)) {
               //Covers case where we zoom out of selection area
-              if (!selectedStations.contains(stationEntity)) {
-                selectedStations.add(stationEntity);
+              if (!selectedLocations.contains(stationEntity)) {
+                selectedLocations.add(stationEntity);
               }
             }
           }
           else {
             stationEntity.show = false;
-            selectedStations.remove(stationEntity);
+            selectedLocations.remove(stationEntity);
           }
         }
   
         //Update the stations in case no entities were added or removed. Call is throttled so can't double call.
         // if (selector.show) {
-        //   updateHistogramThrottled(selectedStations);
+        //   updateHistogramThrottled(selectedLocations);
         // }
   
         //Updated selected temperature
@@ -295,7 +344,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
   
           //Don't draw if rectangle has 0 size. Will cause Cesium to throw an error.
           selector.show = rectangleCoordinates.east !== rectangleCoordinates.west || rectangleCoordinates.north !== rectangleCoordinates.south;
-          selectedStations.removeAll();
+          selectedLocations.removeAll();
   
           //Get stations under selector
           center = Cesium.Rectangle.center(rectangleCoordinates, center);
@@ -308,13 +357,13 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
           for (var i = 0; i < selectedItems.length; i++) {
             var stationEntity = sampleLocations.entities.getById(selectedItems[i]);
   
-            if (stationEntity.show && !selectedStations.contains(stationEntity)
+            if (stationEntity.show && !selectedLocations.contains(stationEntity)
               && stationSelected(stationEntity, rectangleCoordinates, scratchCartographic)) {
-              selectedStations.add(stationEntity);
+              selectedLocations.add(stationEntity);
             }
           }
   
-          //updateHistogramThrottled(selectedStations);
+          //updateHistogramThrottled(selectedLocations);
         }
       }
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE, Cesium.KeyboardEventModifier.SHIFT);
@@ -334,8 +383,8 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
     //Hide the selector by clicking anywhere
     screenSpaceEventHandler.setInputAction(function hideSelector() {
       selector.show = false;
-      selectedStations.removeAll();
-      updateHistogramThrottled(selectedStations);
+      selectedLocations.removeAll();
+      updateHistogramThrottled(selectedLocations);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
   
     var getSelectorLocation = new Cesium.CallbackProperty(function getSelectorLocation(time, result) {
@@ -450,13 +499,13 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
       secondarySelectedIds = spatialHash.retrieve(spatialSelector);
     }
   
-    inFrustumStations.removeAll();
+    visibleMalaiseLocations.removeAll();
   
     //Add visible stations to designated entity collection and hide all other entities
     var inFrustum = _.chain(selectedIds)
       .unionBy(secondarySelectedIds, 'id')
       .map(function (selected) {
-        return inFrustumStations.add(sampleLocations.entities.getById(selected.id)).id;
+        return visibleMalaiseLocations.add(sampleLocations.entities.getById(selected.id)).id;
       })
       .value();
   
@@ -538,6 +587,8 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
           Cesium.GeoJsonDataSource.load(sampleLocationsGeoJson).then(function loadStations(sampleLocations) {
             //createHistogram();
             //fcreateLegend();
+            console.log('yes, we have:')
+            console.log(gridLocations);
             populateGlobe(sampleTypes, sampleLocations);
             
             setupEventListeners(sampleLocations);
